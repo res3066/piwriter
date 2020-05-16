@@ -45,7 +45,7 @@ fi
 #SRC=$1
 
 echo ""
-echo "Currently writing $SRC on $TARGET, which currently looks like this:"
+echo "Preparing to write $SRC on $TARGET, which currently looks like this:"
 echo ""
 diskutil list $TARGET
 echo ""
@@ -59,7 +59,7 @@ diskutil unmountdisk $TARGET
 echo "This will take a bit.  Starting at \c"
 date
 
-time dd if=$SRC of=$TARGET bs=256k
+time dd if="$SRC" of=$TARGET bs=256k
 
 sleep 8
 
