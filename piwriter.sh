@@ -59,34 +59,105 @@ diskutil unmountdisk $TARGET
 echo "This will take a bit.  Starting at \c"
 date
 
-time dd if="$SRC" of=$TARGET bs=256k
+time dd if="$SRC" of=$TARGET bs=128k
 
-sleep 8
+# 8 seconds wasn't enough for Ubuntu (worked for Raspbian).
+# 10 works for Ubuntu on Mojave.
+sleep 12
 
+# /Volumes/boot implies Raspbian (buster or earlier)
 if [ -d /Volumes/boot ]
 then
-  echo "Touching /boot/ssh"
-  touch /Volumes/boot/ssh
-else
-  echo "Apparently not Raspbian, skipping /boot/ssh"
+  echo "mmmm, this is probably older Raspbian..."
+  BOOTDIR="/Volumes/boot"
 fi
 
-if [ -n "$SSID" ]
+# /Volumes/system-boot implies Ubuntu
+if [ -d /Volumes/system-boot ]
 then
-echo "country=US
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-
-network={" > /Volumes/boot/wpa_supplicant.conf
-
-if [ -n "$PASSWORD" ]
-then
-echo " ssid=\"$SSID\"\n psk=\"$PASSWORD\"" >> /Volumes/boot/wpa_supplicant.conf
-else
-echo " ssid=\"$SSID\"\n key_mgmt=NONE" >> /Volumes/boot/wpa_supplicant.conf
+  echo "This smells like Ubuntu to me..."
+  BOOTDIR="/Volumes/system-boot"
 fi
 
-echo "}" >> /Volumes/boot/wpa_supplicant.conf
+if [ -d /Volumes/bootfs ]
+then
+  echo "I smell your bullseye..."
+  BOOTDIR="/Volumes/bootfs"
+fi
+
+
+if [ -n "$BOOTDIR" ]
+then
+  echo "Touching $BOOTDIR/ssh"
+  touch "$BOOTDIR"/ssh
+  echo "Setting up pi/raspberry for login (you have been warned!!!)"
+# pi:raspberry
+  echo 'pi:$6$1gQEEtJelY2.1RlF$bKtefSfqeA5/qHoLVhVNi1lPMoqr/K46gSHplB/MIXf9cSma1FAMfTs4RRHSKsb5idIJvdMmW4l4aMBHjkcML/' > "$BOOTDIR"/userconf.txt
+else
+  echo "Apparently not Raspbian or Ubuntu; skipping enabling ssh"
+fi
+
+if [ -f "./wpa_supplicant.conf" -a -n "$SSID" ]
+then
+  echo "You specified an SSID on the command line but you have a ./wpa_supplicant.conf"
+  echo "I'm confused, giving up!"
+  exit 1
+fi
+
+if [ -f "./wpa_supplicant.conf" ]
+then
+  cp ./wpa_supplicant.conf "$BOOTDIR"/wpa_supplicant.conf
+fi
+
+# synthesize /Volumes/boot/wpa_supplicant.conf the Raspbian way...
+if [ -n "$SSID" -a "$BOOTDIR" = "/Volumes/boot" ]
+then
+(
+  echo "country=US"
+  echo "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev"
+  echo "update_config=1"
+  echo ""
+  echo "network={"
+) > /Volumes/boot/wpa_supplicant.conf
+
+  if [ -n "$PASSWORD" ]
+  then
+    echo " ssid=\"$SSID\"\n psk=\"$PASSWORD\"" >> /Volumes/boot/wpa_supplicant.conf
+  else
+    echo " ssid=\"$SSID\"\n key_mgmt=NONE" >> /Volumes/boot/wpa_supplicant.conf
+  fi
+
+  echo "}" >> /Volumes/boot/wpa_supplicant.conf
+
+fi
+
+# the Ubuntu way
+if [ -n "$SSID" -a "$BOOTDIR" = "/Volumes/system-boot" ]
+then
+  echo "Writing the wifi information for ubuntu"
+  if [ -z "$PASSWORD" ]
+  then
+      cat >> /Volumes/system-boot/network-config <<END
+wifis:
+  wlan0:
+    dhcp4: true
+    optional: true
+    access-points:
+      $SSID:
+
+END
+  else
+      cat >> /Volumes/system-boot/network-config <<END
+wifis:
+  wlan0:
+    dhcp4: true
+    optional: true
+    access-points:
+      $SSID:
+        password: "$PASSWORD"
+
+END
+  fi
 
 fi
 
